@@ -101,10 +101,19 @@ plot.paths <- ggplot(data.yelp.topbus, aes(x=date, y=count, group=Business, colo
   ggtitle("Reviews of Top 10 Businesses over 2017"); plot.paths
 ggsave(paste(OUTPUT_DIR, "paths.jpg", sep=""), plot.paths, width=PLOT.W, height=PLOT.H)
 
+
+
+
+
 ##### Hadamard Count Mean Sketch algorithm
-MAX_K <- 65536
-k <- 65536
-m <- 2^8 # hash functions of size 256 bits
+MAX_K <- 64
+k <- 64
+m.e <- 10
+m <- 2^m.e # hash functions of size 1024 bins
+BITS.PER.CHAR <- 8
+BITS.PER.INT <- 32
+SUBSET.NUM <- 10
+epsilon <- 5
 
 # generate keys
 keys <- as.character(sample(1:MAX_K, k, replace=FALSE))
@@ -112,14 +121,74 @@ keys <- as.character(sample(1:MAX_K, k, replace=FALSE))
 # helper function to generate a hash function
 generate.hash <- function (key) {
   function (d) {
-    sha256(d, key=key)
+    # get only the needed bits
+    hashbits <- rawToBits(charToRaw(sha256(d, key=key)))[1:m.e]
+    # pad and get integer
+    padbits <- intToBits(0)[1:(BITS.PER.INT - m.e)]
+    hashres <- packBits(c(hashbits, padbits), "integer")
+    hashres
   }
 }
 
 # generate k hashes using above keys
 hashes <- apply(t(matrix(keys)), MARGIN=2, FUN=generate.hash)
 
-hist.dp <- hcms.master(as.vector(data.yelp$business_id), 16, k, m, unique(data.yelp$business_id), hashes)
+# subset of data
+#data.yelp.sub <- (data.yelp %>% arrange(date))[1:TOP.SUBSET,]
+#bus.subset <- sample(as.vector(data.bus$business_id), SUBSET.NUM)
+bus.subset <- sample(as.vector(business.hist.top$Business), SUBSET.NUM)
+data.yelp.sub <- data.yelp[data.yelp$business_id %in% bus.subset,]
+# true histogram
+hist.true <- data.frame(table(as.vector(data.yelp.sub$business_id)))
+names(hist.true) <- c("Business", "True")
+
+# function for DP histogram release merged with true result
+calc.merged.hist <- function(hist.true, epsilon, k, m) {
+  # dp histogram
+  hist.dp <- hcms.master(as.vector(data.yelp.sub$business_id), epsilon, k, m, bus.subset, hashes)
+  names(hist.dp) <- c("Business", "DP")
+  # merge hists
+  hist.merged <- merge(hist.true, hist.dp, by="Business")
+  hist.merged$True <- as.numeric(hist.merged$True)
+  hist.merged$DP <- as.numeric(as.vector(hist.merged$DP))
+  hist.merged$epsilon <- epsilon
+  hist.merged
+} 
+
+# # plot HCMS result
+# plot.merged.hist <- function (merged.df, epsilon, fname) {
+#   plot.histhcms <- ggplot(merged.df, aes(x=Business)) +
+#     geom_bar(stat="identity", aes(y=True, fill="True"), alpha=0.5) +
+#     geom_bar(stat="identity", aes(y=DP, fill="DP"), alpha=0.5) +
+#     theme_bw() +
+#     theme(axis.text.x=element_blank(), legend.position = "bottom") +
+#     ylab("Reviews") +
+#     ggtitle(paste("Epsilon =", epsilon)) +
+#     scale_y_continuous(expand = c(0, 0, 0.05, 0)) +
+#     scale_fill_manual(name="Release Type", values=c(True="red", DP="blue")); plot.histhcms
+#   ggsave(fname, plot.histhcms, width=2, height=2)
+#   plot.histhcms
+# }
+
+# plot for different values of epsilon
+hist.e.01 <- calc.merged.hist(hist.true, 0.1, k, m)
+hist.e.1 <- calc.merged.hist(hist.true, 1, k, m)
+hist.e.10 <- calc.merged.hist(hist.true, 10, k, m)
+fnames <- paste(OUTPUT_DIR, c("hcms01.jpg", "hcms1.jpg", "hcms10.jpg"), sep="")
+
+# plot the HCMS result
+plot.hcmshist <- ggplot(rbind(hist.e.01, hist.e.1, hist.e.10), aes(x=Business)) +
+  geom_bar(stat="identity", aes(y=True, fill="True"), alpha=0.5) +
+  geom_bar(stat="identity", aes(y=DP, fill="DP"), alpha=0.5) +
+  theme_bw() +
+  theme(axis.text.x=element_blank(), legend.position = "bottom") +
+  ylab("Reviews") +
+  scale_y_continuous(expand = c(0, 0, 0.05, 0)) +
+  scale_fill_manual(name="Release Type", values=c(True="red", DP="blue")) +
+  facet_wrap(~epsilon); plot.hcmshist
+ggsave(paste(OUTPUT_DIR, "hcms.jpg", sep=""), plot.hcmshist, width=PLOT.W, height=PLOT.H)
 
 
-  
+# plot.merged.hist(hist.e.01, 0.1, fnames[1])
+# plot.merged.hist(hist.e.1, 1, fnames[2])
+# plot.merged.hist(hist.e.10, 10, fnames[3])
