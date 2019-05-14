@@ -1,0 +1,23 @@
+.DS_Store
+
+.Rhistory
+
+*.latex
+*.csv
+*.json
+
+# 'Helper' LaTeX files to ignore
+*.aux
+*.fdb_latexmk
+*.nav
+*.out
+*.snm
+*.gz
+*.toc
+*.pdfsync
+*.blg
+*.bbl
+*.log
+*.fls
+*.synctex.gz
+*.synctex
