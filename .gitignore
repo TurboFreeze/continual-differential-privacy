@@ -3,7 +3,6 @@
 .Rhistory
 
 *.latex
-*.csv
 *.json
 
 # 'Helper' LaTeX files to ignore
